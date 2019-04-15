@@ -436,7 +436,7 @@ def Hit_Ball_To(self, packet: GameTickPacket, aim_pos: Vec3):
 				self.controller_state.roll = 0.0
 			
 			# Flip into the ball
-			if not car.double_jumped and car_to_ball.len() < 600.0 and abs(car_to_ball.z - 70) < 150.0 and car_pos.z > 50.0:
+			if not car.double_jumped and car_to_ball.len() < 600.0 and abs(car_to_ball.z + 70) < 125.0 and car_pos.z > 50.0:
 				self.controller_state.jump = True
 				yaw = self.controller_state.yaw
 				self.controller_state.yaw = math.sin(yaw)
