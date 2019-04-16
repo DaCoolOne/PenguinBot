@@ -378,10 +378,10 @@ def Hit_Ball_To(self, packet: GameTickPacket, aim_pos: Vec3):
 				
 				refine = refine + 1
 			
-			self.renderer.begin_rendering()
-			self.renderer.draw_line_3d(ball_pos.UI_Vec3(), (ball_pos + ball_offset).UI_Vec3(), self.renderer.red())
-			self.renderer.draw_line_3d(aim_pos.UI_Vec3(), (aim_pos + Vec3(0, 0, 100)).UI_Vec3(), self.renderer.yellow())
-			self.renderer.end_rendering()
+			# self.renderer.begin_rendering()
+			# self.renderer.draw_line_3d(ball_pos.UI_Vec3(), (ball_pos + ball_offset).UI_Vec3(), self.renderer.red())
+			# self.renderer.draw_line_3d(aim_pos.UI_Vec3(), (aim_pos + Vec3(0, 0, 100)).UI_Vec3(), self.renderer.yellow())
+			# self.renderer.end_rendering()
 			
 			impulse = target_vel - car_vel
 			
@@ -436,7 +436,7 @@ def Hit_Ball_To(self, packet: GameTickPacket, aim_pos: Vec3):
 				self.controller_state.roll = 0.0
 			
 			# Flip into the ball
-			if not car.double_jumped and car_to_ball.len() < 600.0 and abs(car_to_ball.z + 70) < 125.0 and car_pos.z > 50.0:
+			if not car.double_jumped and car_to_ball.len() < 600.0 and abs(car_to_ball.z - 30) < 150.0 and car_pos.z > 50.0:
 				self.controller_state.jump = True
 				yaw = self.controller_state.yaw
 				self.controller_state.yaw = math.sin(yaw)
@@ -480,8 +480,8 @@ def Hit_Ball_To(self, packet: GameTickPacket, aim_pos: Vec3):
 		steer_correction_radians = car_direction.correction_to(car_to_target) * 3.0
 		
 		car_to_ball_2D = ball_location - car_location
-		car_to_ball_plus_vel = ball_location - car_location - Vector2(car_vel.x, car_vel.y) * 0.75
-		car_to_ball_plus_vel_2 = ball_location - car_location - Vector2(car_vel.x, car_vel.y) * 1.25
+		car_to_ball_plus_vel = car_to_ball_2D - Vector2(car_vel.x, car_vel.y) * 0.75
+		car_to_ball_plus_vel_2 = car_to_ball_2D - Vector2(car_vel.x, car_vel.y) * 1.25
 		
 		self.controller_state.throttle = min(1, max(-1, (car_to_ball_2D.len() - max(ball_z * 3.0, 300)) * 0.005))
 		
@@ -492,14 +492,14 @@ def Hit_Ball_To(self, packet: GameTickPacket, aim_pos: Vec3):
 		self.controller_state.steer = -max(-1.0, min(1.0, steer_correction_radians))
 		self.controller_state.boost = car_to_ball_plus_vel.len() > max(ball_z * 3.5, 1000) and abs(steer_correction_radians) < math.pi * 0.3
 		
-		if abs(steer_correction_radians) < 0.3 and self.controller_state.throttle > 0.0:
+		if abs(steer_correction_radians) < 0.3 and self.controller_state.throttle > -0.1:
 			self.line_up_time += self.delta
 		else:
 			self.line_up_time = 0
 		
 		take_off_angle = math.atan2(car_to_ball.z, car_to_ball_plus_vel_2.len())
 		
-		if self.line_up_time > 0.2 and abs(take_off_angle - math.pi * 0.15) < math.pi * 0.1 and self.controller_state.throttle >= 0.0 and time_to_reach_ball * 30 < car.boost:
+		if self.line_up_time > 0.2 and abs(take_off_angle - math.pi * 0.15) < math.pi * 0.1 and self.controller_state.throttle >= 0.0 and time_to_reach_ball * 40 < car.boost:
 			self.controller_state.jump = True
 			self.is_arieal = True
 		
@@ -542,8 +542,6 @@ def Strategy_Dropshot(self, packet):
 	
 	my_car = packet.game_cars[self.index]
 	
-	ball = packet.game_ball.physics
-	
 	direction = Vec3(0, 1, 0)
 	if my_car.team != 0:
 		direction = Vec3(0, -1, 0)
@@ -552,8 +550,6 @@ def Strategy_Dropshot(self, packet):
 		self.controller_state.boost = False
 		self.controller_state.throttle = 0.0
 		return
-	
-	ball_pos = Make_Vect(ball.location)
 	
 	if packet.game_ball.latest_touch.team == my_car.team:
 		self.last_touch.player_name = packet.game_ball.latest_touch.player_name
@@ -578,13 +574,17 @@ def Strategy_Dropshot(self, packet):
 			my_team_cars_index.insert(i2, i)
 		i += 1
 	
+	ball = packet.game_ball.physics
+	
+	ball_pos = Make_Vect(ball.location)
+	
 	# Car that should attack is the first car in the list that has not hit the ball and is facing ball
 	attack_car = -1
 	for car_index in my_team_cars_index:
 		car = packet.game_cars[car_index]
 		car_direction = get_car_facing_vector(car)
 		car_to_ball = ball_pos - Make_Vect(car.physics.location)
-		if not (self.last_touch.player_name == car.name and packet.game_info.seconds_elapsed - self.last_touch.time_seconds < 3.0) and (dot_2D(car_direction, car_to_ball) > 0.0 or car.boost > 80.0) and dot_2D(car_to_ball + direction * 1000, direction):
+		if not (self.last_touch.player_name == car.name and packet.game_info.seconds_elapsed - self.last_touch.time_seconds < 3.0) and (dot_2D(car_direction, car_to_ball) > 0.0 or car.boost > 80.0) and (dot_2D(car_to_ball + direction * 1000, direction) or (car_pos.y < 0.0) == (car.team == 0)):
 			attack_car = car_index
 			break
 	
@@ -606,6 +606,13 @@ def Strategy_Dropshot(self, packet):
 			# Calculate the target for the bot
 			car_to_ball = ball_pos - car_pos
 			aim_pos = Get_AOI_Offset(self, packet, car_pos + car_to_ball.normal(car_to_ball.len() + max(ball_pos.z * 1.5, 500)))
+			
+			side = 500
+			if car.team == 0:
+				side = -500
+			
+			if (car_pos.y < side) == (car.team == 0):
+				aim_pos.z = ball_pos.z
 			Hit_Ball_To(self, packet, aim_pos)
 			self.flip_wait_timer = 0.0
 		
@@ -617,41 +624,83 @@ def Strategy_Dropshot(self, packet):
 				break
 		
 		target_location = Vector2(0, 0)
-		if other_car_i == -1:
-			if car.team == 0:
-				target_location = Vector2(0, max(ball.location.y - 3000, -4000))
+		
+		side = 3000
+		if car.team == 0:
+			side = -3000
+		
+		if (car_pos.y < side) == (car.team == 0):
+			if other_car_i == -1:
+				if car.team == 0:
+					target_location = Vector2(0, ball.location.y + 1000)
+				else:
+					target_location = Vector2(0, ball.location.y - 1000)
 			else:
-				target_location = Vector2(0, min(ball.location.y + 3000, 4000))
+				other_car = packet.game_cars[other_car_i]
+				
+				l1 = 0
+				l2 = 0
+				
+				other_car_pos = Vector2(other_car.physics.location.x, other_car.physics.location.y)
+				
+				s = sign(ball.location.x)
+				
+				if car.team == 0:
+					l1 = Vector2(0, ball.location.y + 2000)
+				else:
+					l1 = Vector2(0, ball.location.y - 2000)
+				
+				if car.team == 0:
+					l2 = Vector2(s * 2000, ball.location.y + 500)
+				else:
+					l2 = Vector2(s * 2000, ball.location.y - 500)
+				
+				len1 = (l1 - other_car_pos).len()
+				len2 = (l2 - other_car_pos).len()
+				
+				len1_2 = (l1 - car_pos_2D).len()
+				len2_2 = (l2 - car_pos_2D).len()
+				
+				if len1 + len2_2 < len2 + len1_2:
+					target_location = l2
+				else:
+					target_location = l1
 		else:
-			other_car = packet.game_cars[other_car_i]
-			
-			l1 = 0
-			l2 = 0
-			
-			other_car_pos = Vector2(other_car.physics.location.x, other_car.physics.location.y)
-			
-			s = sign(ball.location.x)
-			
-			if car.team == 0:
-				l1 = Vector2(ball.location.x - s * 2500, max(ball.location.y - 2000, -2000))
+			if other_car_i == -1:
+				if car.team == 0:
+					target_location = Vector2(0, max(ball.location.y - 3000, -4000))
+				else:
+					target_location = Vector2(0, min(ball.location.y + 3000, 4000))
 			else:
-				l1 = Vector2(ball.location.x - s * 2500, min(ball.location.y + 2000, 2000))
-			
-			if car.team == 0:
-				l2 = Vector2(constrain(ball.location.x, -3000, 3000), max(ball.location.y - 3000, -4000))
-			else:
-				l2 = Vector2(constrain(ball.location.x, -3000, 3000), min(ball.location.y + 3000, 4000))
-			
-			len1 = (l1 - other_car_pos).len()
-			len2 = (l2 - other_car_pos).len()
-			
-			len1_2 = (l1 - car_pos_2D).len()
-			len2_2 = (l2 - car_pos_2D).len()
-			
-			if len1 + len2_2 < len2 + len1_2:
-				target_location = l2
-			else:
-				target_location = l1
+				other_car = packet.game_cars[other_car_i]
+				
+				l1 = 0
+				l2 = 0
+				
+				other_car_pos = Vector2(other_car.physics.location.x, other_car.physics.location.y)
+				
+				s = sign(ball.location.x)
+				
+				if car.team == 0:
+					l1 = Vector2(ball.location.x - s * 2500, max(ball.location.y - 2000, -2000))
+				else:
+					l1 = Vector2(ball.location.x - s * 2500, min(ball.location.y + 2000, 2000))
+				
+				if car.team == 0:
+					l2 = Vector2(constrain(ball.location.x, -3000, 3000), max(ball.location.y - 3000, -4000))
+				else:
+					l2 = Vector2(constrain(ball.location.x, -3000, 3000), min(ball.location.y + 3000, 4000))
+				
+				len1 = (l1 - other_car_pos).len()
+				len2 = (l2 - other_car_pos).len()
+				
+				len1_2 = (l1 - car_pos_2D).len()
+				len2_2 = (l2 - car_pos_2D).len()
+				
+				if len1 + len2_2 < len2 + len1_2:
+					target_location = l2
+				else:
+					target_location = l1
 			
 		# self.renderer.begin_rendering()
 		
