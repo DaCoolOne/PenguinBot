@@ -212,11 +212,11 @@ def Drive_To(self, packet: GameTickPacket, position, boost = False, no_overshoot
 			
 			self.controller_state.boost = (abs(steer_correction_radians) < 0.5 and car_to_pos_vel_2.len() > 500.0) and boost
 			
-			self.controller_state.handbrake = False
+			self.controller_state.handbrake = abs(steer_correction_radians) > math.pi * 0.5
 			
 		else:
 			self.controller_state.boost = False
-			self.controller_state.handbrake = (abs(steer_correction_radians) < math.pi * 0.7) and (abs(steer_correction_radians) > math.pi * 0.3) and my_car.physics.location.z < 100.0
+			self.controller_state.handbrake = (abs(steer_correction_radians) < math.pi * 0.8) and (abs(steer_correction_radians) > math.pi * 0.3) and my_car.physics.location.z < 100.0
 			self.controller_state.throttle = constrain(car_to_pos_vel_2.len() / 100, 0, 1)
 			if dot_2D(car_to_pos_vel.flatten().normal(), get_car_facing_vector(my_car).flatten().normal()) < -0.7 and my_car.physics.location.z < 50.0:
 				self.controller_state.throttle = -self.controller_state.throttle
@@ -335,7 +335,7 @@ def Collect_Boost(self, packet: GameTickPacket, position, do_boost = False, allo
 	
 
 def Get_Ball_At_T(packet, prediction, time):
-	delta = packet.game_info.seconds_elapsed - prediction.slices[0].game_seconds
+	delta = prediction.slices[0].game_seconds - packet.game_info.seconds_elapsed
 	return prediction.slices[clamp(math.ceil(delta + time * 60), 0, len(prediction.slices) - 1)].physics
 
 def Attack_Aim_Ball(self, packet: GameTickPacket, aim_pos: Vec3, ball_predict: Vec3):
@@ -501,8 +501,11 @@ def Maneuver_Align(self, packet, time):
 		self.controller_state.roll = 0.0
 		self.controller_state.steer = 0.0
 	
-	if (impulse.len() / 900 * 40 > (my_car.boost + 10) or impulse.len() / 900 > self.aerial_hit_time) and self.manuever_lock < -0.5:
-		self.manuever_lock = 0.0
+	if impulse.len() < 200:
+		self.manuever_lock = -0.2
+	
+	# if (impulse.len() / 900 * 40 > (my_car.boost + 10) or impulse.len() / 900 > self.aerial_hit_time) and self.manuever_lock < -0.5:
+		# self.manuever_lock = 0.0
 	
 
 def Enter_Aerial(self, packet, time, aim):
@@ -623,8 +626,8 @@ def Aerial_Hit_Ball(self, packet: GameTickPacket, target: Vec3):
 	
 	if ball_pos.z < 250:
 		Attack_Aim_Ball(self, packet, target, ball_pos)
-	elif time > 2:
-		Collect_Boost(self, packet, ball_pos, True, True)
+	# elif time > 2:
+		# Collect_Boost(self, packet, ball_pos, True, True)
 	else:
 		
 		impulse_raw = Get_Impulse(packet, my_car.physics, ball_pos, time)
@@ -665,7 +668,7 @@ def Aerial_Hit_Ball(self, packet: GameTickPacket, target: Vec3):
 		
 		# Drive_To(self, packet, ball_pos, True)
 		
-		if dot(impulse_raw.normal(), (Make_Vect(my_car.physics.velocity) + up_vect).normal()) > 0.9 and impulse.len() / 900 * 40 < (my_car.boost + 10) and impulse.len() / 900 < time:
+		if dot(impulse_raw.normal(), (Make_Vect(my_car.physics.velocity) + up_vect).normal()) > 0.95 and impulse.len() / 900 * 40 < (my_car.boost + 10) and impulse.len() / 900 < time:
 			self.jump_timer += self.delta
 		else:
 			self.jump_timer = 0.0
@@ -882,7 +885,7 @@ class Plan:
 		# Offensive positioning
 		else:
 			self.def_pos_1 = Vec3(sign(packet.game_ball.physics.location.x) * -1000, packet.game_ball.physics.location.y + opponent_goal.direction.y * 1000, 0.0)
-			self.def_pos_2 = Make_Vect(packet.game_ball.physics.location) + Make_Vect(opponent_goal.direction) * 2500
+			self.def_pos_2 = Make_Vect(packet.game_ball.physics.location) + Make_Vect(opponent_goal.direction) * 3500
 			self.aim_pos = Make_Vect(opponent_goal.location)
 			self.aggro = True
 		
@@ -903,8 +906,8 @@ class Plan:
 				c1 = packet.game_cars[agent.index].physics.location
 				c2 = packet.game_cars[team[other_car_index]].physics.location
 				
-				l1 = (self.def_pos_1 - c1).len() + (self.def_pos_2 - c2).len()
-				l2 = (self.def_pos_1 - c2).len() + (self.def_pos_2 - c1).len()
+				l1 = (self.def_pos_1 - c1).len() * (2 - packet.game_cars[agent.index].boost * 0.01) # + (self.def_pos_2 - c2).len()
+				l2 = (self.def_pos_1 - c2).len() * (2 - packet.game_cars[team[other_car_index]].boost * 0.01) # + (self.def_pos_2 - c1).len()
 				
 				if l1 < l2:
 					self.def_pos = self.def_pos_1
@@ -968,7 +971,7 @@ class PenguinBot(BaseAgent):
 			self.plan.state = State.SPAWN
 			return
 		
-		if self.plan.state == State.ATTACK or ((Make_Vect(packet.game_cars[self.index].physics.location) - Make_Vect(my_goal.location)).len() < 1500 and dot(Make_Vect(packet.game_cars[self.index].physics.location) - Make_Vect(packet.game_ball.physics.location), Make_Vect(my_goal.location) - Make_Vect(packet.game_ball.physics.location)) > 0.0):
+		if self.plan.state == State.ATTACK or ((Make_Vect(packet.game_cars[self.index].physics.location) - Make_Vect(my_goal.location)).len() < 2000 and dot(Make_Vect(packet.game_cars[self.index].physics.location) - Make_Vect(packet.game_ball.physics.location), Make_Vect(my_goal.location) - Make_Vect(packet.game_ball.physics.location)) > 0.0):
 			Aerial_Hit_Ball(self, packet, self.plan.aim_pos)
 		elif self.plan.state == State.GRABBOOST:
 			Grab_Boost_Pad(self, packet, self.plan.def_pos)
