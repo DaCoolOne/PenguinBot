@@ -230,30 +230,26 @@ def Drive_To(self, packet: GameTickPacket, position, boost = False, no_overshoot
 		self.controller_state.pitch = 0.0
 	else:
 		
-		car_to_pos = Make_Vect(position) - Make_Vect(my_car.physics.location)
 		vel = Make_Vect(my_car.physics.velocity)
 		
-		if my_car.physics.location.z > -my_car.physics.velocity.z * 1.2 and my_car.physics.location.z > 200:
-			Align_Car_To(self, packet, vel.flatten().normal() - Vec3(0, 0, 2))
-			self.controller_state.throttle = 1.0
-			self.controller_state.boost = 0.3 > angle_between(Vec3(1, 0, 0).align_to(my_car.physics.rotation), Make_Vect(my_car.physics.velocity).flatten().normal() - Vec3(0, 0, 2))
+		car_step = Make_Vect(my_car.physics.location) + Make_Vect(my_car.physics.velocity) * 1.2
+		
+		# Wall landing
+		if car_step.z > 150 and abs(car_step.x) > 4096 or abs(car_step.y) > 5120:
+			if 4096 - abs(car_step.x) < 5120 - abs(car_step.y):
+				Align_Car_To(self, packet, Vec3(0, 0, -1), Vec3(0, -sign(car_step.y), 0))
+			else:
+				Align_Car_To(self, packet, Vec3(0, 0, -1), Vec3(-sign(car_step.x), 0, 0))
 		else:
-			Align_Car_To(self, packet, vel.flatten(), Vec3(0, 0, 1))
-			self.controller_state.throttle = 1.0
-			self.controller_state.boost = False
-		
-		# steer_correction_radians = correction(my_car, car_to_pos)
-		
-		# car_rot = my_car.physics.rotation
-		
-		# self.controller_state.throttle = 1.0
-		
-		# self.controller_state.roll = correct(0.0, car_rot.roll)
-		# self.controller_state.yaw = -max(-1.0, min(1.0, steer_correction_radians * 2.0 - my_car.physics.angular_velocity.z * 0.25))
-		
-		# self.controller_state.pitch = correct(0.0, car_rot.pitch)
-		
-		# self.controller_state.steer = -max(-1.0, min(1.0, steer_correction_radians * 2.0))
+			# Ground landing
+			if my_car.physics.location.z > -my_car.physics.velocity.z * 1.2 and my_car.physics.location.z > 200:
+				Align_Car_To(self, packet, vel.flatten().normal() - Vec3(0, 0, 2))
+				self.controller_state.throttle = 1.0
+				self.controller_state.boost = 0.3 > angle_between(Vec3(1, 0, 0).align_to(my_car.physics.rotation), Make_Vect(my_car.physics.velocity).flatten().normal() - Vec3(0, 0, 2))
+			else:
+				Align_Car_To(self, packet, vel.flatten(), Vec3(0, 0, 1))
+				self.controller_state.throttle = 1.0
+				self.controller_state.boost = False
 		
 		self.controller_state.handbrake = False
 		self.controller_state.jump = False
@@ -377,9 +373,9 @@ def Attack_Aim_Ball(self, packet: GameTickPacket, aim_pos: Vec3, ball_predict: V
 		Collect_Boost(self, packet, (ball_predict - aim * 2), True, False, False, True)
 		self.controller_state.boost = True
 	elif abs(car_to_ball_real.z) > 250:
-		Collect_Boost(self, packet, (ball_predict - aim * 2), True, True, False)
+		Collect_Boost(self, packet, (ball_predict - aim * 4), True, True, False)
 	else:
-		Drive_To(self, packet, (ball_predict - aim * (car_to_ball_real.len() * 0.005 + 0.1)), True)
+		Drive_To(self, packet, (ball_predict - aim * (car_to_ball_real.len() * 0.005 + 0.2)), True)
 	
 	self.renderer.draw_line_3d(ball_predict.UI_Vec3(), (ball_predict - aim * (car_to_pos.len() * 0.005 + 0.1)).UI_Vec3(), self.renderer.red())
 	
@@ -734,7 +730,7 @@ def Grab_Boost_Pad(self, packet, target):
 			big_pads.append(boost)
 	
 	if len(big_pads) > 0:
-		l = 3000
+		l = 4000
 		p = Make_Vect(packet.game_cars[self.index].physics.location)
 		for boost in big_pads:
 			l2 = (Make_Vect(boost.location) - p).len()
@@ -981,7 +977,7 @@ class PenguinBot(BaseAgent):
 			Grab_Boost_Pad(self, packet, self.plan.def_pos)
 		else:
 			#if packet.game_cars[self.index].boost > 50:
-			Collect_Boost(self, packet, self.plan.def_pos)
+			Collect_Boost(self, packet, self.plan.def_pos, True, True, True, False)
 			# else:
 				# Grab_Boost_Pad(self, packet)
 	
