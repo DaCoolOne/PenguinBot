@@ -185,7 +185,7 @@ def Drive_To(self, packet: GameTickPacket, position, boost = False, no_overshoot
 	
 	position = Vec3(constrain(position.x, -4100, 4100), constrain(position.y, -5100, 5100), position.z)
 	
-	if abs(position.x) < 3500 and abs(position.y) < 4500:
+	if abs(position.x) < 3500 and abs(position.y) < 4500 and not self.dropshot:
 		position.z = 0
 	
 	render_star(self, position, self.renderer.green())
@@ -235,7 +235,7 @@ def Drive_To(self, packet: GameTickPacket, position, boost = False, no_overshoot
 		car_step = Make_Vect(my_car.physics.location) + Make_Vect(my_car.physics.velocity) * 1.2
 		
 		# Wall landing
-		if car_step.z > 150 and abs(car_step.x) > 4096 or abs(car_step.y) > 5120:
+		if car_step.z > 150 and (abs(car_step.x) > 4096 or abs(car_step.y) > 5120) and not self.dropshot:
 			if 4096 - abs(car_step.x) < 5120 - abs(car_step.y):
 				Align_Car_To(self, packet, Vec3(0, 0, -1), Vec3(0, -sign(car_step.y), 0))
 			else:
@@ -841,7 +841,7 @@ class Plan:
 			self.state = State.ATTACK
 		else:
 			self.attacking_car = closest_team_mate
-			if packet.game_info.is_kickoff_pause:
+			if packet.game_info.is_kickoff_pause and not agent.dropshot:
 				self.state = State.GRABBOOST
 			else:
 				self.state = State.HOLD
@@ -876,18 +876,34 @@ class Plan:
 			if self.state != State.GRABBOOST or packet.game_cars[agent.index].boost > 20:
 				self.eval(agent, packet, my_goal.direction)
 		
-		# Defensive positioning
-		if abs(packet.game_ball.physics.location.y - my_goal.location.y) < 4000:
-			self.def_pos_2 = Vec3(sign(packet.game_ball.physics.location.x) * -3500, my_goal.location.y + my_goal.direction.y * 500, 0.0)
-			self.def_pos_1 = Make_Vect(my_goal.location).flatten() - Vec3(sign(packet.game_ball.physics.location.x) * 500, 0, 0)
-			self.aim_pos = Vec3(sign(packet.game_ball.physics.location.x) * 3600, packet.game_ball.physics.location.y + my_goal.direction.y * 1000, 500.0)
-			self.aggro = False
-		# Offensive positioning
-		else:
-			self.def_pos_1 = Vec3(sign(packet.game_ball.physics.location.x) * -1000, packet.game_ball.physics.location.y + opponent_goal.direction.y * 1000, 0.0)
-			self.def_pos_2 = Make_Vect(packet.game_ball.physics.location) + Make_Vect(opponent_goal.direction) * 3500
-			self.aim_pos = Make_Vect(opponent_goal.location)
+		# Dropshot
+		if agent.dropshot:
+			
+			dir_y = aign(my_goal.location.y)
+			
+			self.def_pos_1 = Vec3(sign(packet.game_ball.physics.location.x) * -1000, packet.game_ball.physics.location.y + dir_y * 1000, 0.0)
+			self.def_pos_2 = Make_Vect(packet.game_ball.physics.location) + Vec3(0, dir_y * 2000, 0) * 3500
+			if sign(dir_y) == sign(packet.game_ball.physics.location.y):
+				self.aim_pos = Make_Vect(packet.game_ball.physics.location) + Vec3(0, dir_y * 1000, 1000)
+			else:
+				self.aim_pos = Make_Vect(packet.game_ball.physics.location) + Vec3(0, dir_y * 1000, -1000)
 			self.aggro = True
+			
+		# 3v3
+		else:
+			
+			# Defensive positioning
+			if abs(packet.game_ball.physics.location.y - my_goal.location.y) < 4000:
+				self.def_pos_2 = Vec3(sign(packet.game_ball.physics.location.x) * -3500, my_goal.location.y + my_goal.direction.y * 500, 0.0)
+				self.def_pos_1 = Make_Vect(my_goal.location).flatten() - Vec3(sign(packet.game_ball.physics.location.x) * 500, 0, 0)
+				self.aim_pos = Vec3(sign(packet.game_ball.physics.location.x) * 3600, packet.game_ball.physics.location.y + my_goal.direction.y * 1000, 500.0)
+				self.aggro = False
+			# Offensive positioning
+			else:
+				self.def_pos_1 = Vec3(sign(packet.game_ball.physics.location.x) * -1000, packet.game_ball.physics.location.y + opponent_goal.direction.y * 1000, 0.0)
+				self.def_pos_2 = Make_Vect(packet.game_ball.physics.location) + Make_Vect(opponent_goal.direction) * 3500
+				self.aim_pos = Make_Vect(opponent_goal.location) + Vec3(0, 0, -400)
+				self.aggro = True
 		
 		team = self.get_team_cars(packet)
 		
@@ -977,11 +993,13 @@ class PenguinBot(BaseAgent):
 			Grab_Boost_Pad(self, packet, self.plan.def_pos)
 		else:
 			#if packet.game_cars[self.index].boost > 50:
-			Collect_Boost(self, packet, self.plan.def_pos, True, True, True, False)
+			Collect_Boost(self, packet, self.plan.def_pos, not self.dropshot, True, True, False)
 			# else:
 				# Grab_Boost_Pad(self, packet)
 	
 	def get_output(self, packet: GameTickPacket):
+		
+		self.dropshot = packet.num_tiles > 0
 		
 		self.renderer.begin_rendering()
 		
