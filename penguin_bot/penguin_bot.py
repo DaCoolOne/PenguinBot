@@ -183,7 +183,10 @@ def Enter_High_Flip(self, packet, dir):
 
 def Drive_To(self, packet: GameTickPacket, position, boost = False, no_overshoot = False):
 	
-	position = Vec3(constrain(position.x, -4100, 4100), constrain(position.y, -5100, 5100), position.z)
+	position = Make_Vect(position)
+	
+	if not self.dropshot:
+		position = Vec3(constrain(position.x, -4100, 4100), constrain(position.y, -5100, 5100), position.z)
 	
 	if abs(position.x) < 3500 and abs(position.y) < 4500 and not self.dropshot:
 		position.z = 0
@@ -345,16 +348,16 @@ def Attack_Aim_Ball(self, packet: GameTickPacket, aim_pos: Vec3, ball_predict: V
 	
 	car_direction = get_car_facing_vector(car)
 	
-	a = (ball_predict - aim_pos).flatten().normal(-125)
+	a = (ball_predict - aim_pos).flatten().normal(-100)
 	aim = (Vec3(a.x, a.y, 0) + car_direction * 100)
 	aim_2 = Vec3(a.x, a.y, 0)
 	
 	aim = aim.align_from(car_rot)
-	aim.y = aim.y * 0.3
+	aim.y = aim.y * 0.5
 	aim = aim.align_to(car_rot)
 	
 	aim_2 = aim_2.align_from(car_rot)
-	aim_2.y = aim_2.y * 0.3
+	aim_2.y = aim_2.y * 0.5
 	aim_2 = aim_2.align_to(car_rot)
 	
 	car_to_pos = ball_predict - Make_Vect(car.physics.location) - Make_Vect(car.physics.velocity) * 0.1
@@ -370,14 +373,14 @@ def Attack_Aim_Ball(self, packet: GameTickPacket, aim_pos: Vec3, ball_predict: V
 		ang = correction(car, c_p)
 		Enter_Flip(self, packet, Vec3(-math.sin(ang) * 2, math.cos(ang), 0.0).normal())
 	elif packet.game_info.is_kickoff_pause:
-		Collect_Boost(self, packet, (ball_predict - aim * 2), True, False, False, True)
+		Collect_Boost(self, packet, (ball_predict - aim_2 * 2), True, False, False, True)
 		self.controller_state.boost = True
 	elif abs(car_to_ball_real.z) > 250:
-		Collect_Boost(self, packet, (ball_predict - aim * 4), True, True, False)
+		Collect_Boost(self, packet, (ball_predict - aim_2 * 4), True, True, True)
 	else:
-		Drive_To(self, packet, (ball_predict - aim * (car_to_ball_real.len() * 0.005 + 0.2)), True)
+		Drive_To(self, packet, (ball_predict - aim_2 * (car_to_ball_real.len() * 0.005 + 0.2)), True)
 	
-	self.renderer.draw_line_3d(ball_predict.UI_Vec3(), (ball_predict - aim * (car_to_pos.len() * 0.005 + 0.1)).UI_Vec3(), self.renderer.red())
+	self.renderer.draw_line_3d(ball_predict.UI_Vec3(), (ball_predict - aim_2 * (car_to_pos.len() * 0.005 + 0.1)).UI_Vec3(), self.renderer.red())
 	
 	self.renderer.draw_line_3d(packet.game_ball.physics.location, aim_pos.UI_Vec3(), self.renderer.white())
 	
@@ -478,17 +481,24 @@ def Maneuver_Align(self, packet, time):
 	
 	self.aerial_hit_time -= self.delta
 	
-	ball_pos = Get_Ball_At_T(packet, self.get_ball_prediction_struct(), self.aerial_hit_time).location
+	ball_pos = 0
+	
+	if self.aerial_hit_time < 0:
+		ball_pos = packet.game_ball.physics.location
+	else:
+		ball_pos = Get_Ball_At_T(packet, self.get_ball_prediction_struct(), self.aerial_hit_time).location
 	
 	self.renderer.draw_line_3d(ball_pos, (Make_Vect(ball_pos) - self.aerial_hit_position).UI_Vec3(), self.renderer.green())
 	
-	impulse = Aerial_To(self, packet, Make_Vect(ball_pos) - self.aerial_hit_position, self.aerial_hit_time) # self.aerial_hit_position, self.aerial_hit_time)
+	impulse = Aerial_To(self, packet, Make_Vect(ball_pos) - self.aerial_hit_position * min(0.8+time*2, 1.5), max(self.aerial_hit_time, 0.1)) # self.aerial_hit_position, self.aerial_hit_time)
 	
 	local_impulse = impulse.align_from(my_car.physics.rotation)
 	
 	self.controller_state.jump = self.jump_timer < 0.2 and local_impulse.z > 50
 	
 	render_star(self, Make_Vect(Get_Ball_At_T(packet, self.get_ball_prediction_struct(), self.aerial_hit_time).location), self.renderer.red())
+	
+	self.renderer.draw_line_3d((Make_Vect(ball_pos) + self.aerial_hit_position * 10).UI_Vec3(), ball_pos, self.renderer.purple())
 	
 	if self.jump_timer > 0.3 and not my_car.double_jumped and local_impulse.z > 400:
 		self.controller_state.jump = True
@@ -497,8 +507,8 @@ def Maneuver_Align(self, packet, time):
 		self.controller_state.roll = 0.0
 		self.controller_state.steer = 0.0
 	
-	# if impulse.len() < 200:
-		# self.manuever_lock = -0.2
+	if impulse.len() < 100 and self.manuever_lock > -0.2:
+		self.manuever_lock = -0.2
 	
 	# if (impulse.len() / 900 * 40 > (my_car.boost + 10) or impulse.len() / 900 > self.aerial_hit_time) and self.manuever_lock < -0.5:
 		# self.manuever_lock = 0.0
@@ -545,7 +555,7 @@ def Time_to_Pos(car, position, velocity):
 	car_to_pos = Make_Vect(position) - Make_Vect(car.physics.location)
 	
 	# Subtract 100 from the length because we contact the ball slightly sooner than we reach the point
-	len = max(0, car_to_pos.len() - 120)
+	len = max(0, car_to_pos.len() - 200)
 	vel = Make_Vect(velocity)
 	v_len = vel.len() * dot(car_to_pos.normal(), vel.normal())
 	
@@ -603,11 +613,11 @@ def Aerial_Hit_Ball(self, packet: GameTickPacket, target: Vec3):
 	
 	aim = Vec3()
 	
-	up_vect = Vec3(0, 0, 0)
+	up_vect = Vec3(0, 0, 200)
 	
 	# Car gets instantaneous velocity increase of 300 uu from first jump, plus some for second jump
 	if not my_car.double_jumped:
-		up_vect = Vec3(0, 0, 200).align_to(my_car.physics.rotation)
+		up_vect = Vec3(50, 0, 300).align_to(my_car.physics.rotation)
 	
 	for i in range(20):
 		
@@ -664,7 +674,7 @@ def Aerial_Hit_Ball(self, packet: GameTickPacket, target: Vec3):
 		
 		# Drive_To(self, packet, ball_pos, True)
 		
-		if dot(impulse_raw.flatten().normal(), (Make_Vect(my_car.physics.velocity) + up_vect).flatten().normal()) > 0.95 and impulse.len() / 900 * 40 < (my_car.boost + 10) and impulse.len() / 900 < time:
+		if dot(impulse_raw.normal(), (Make_Vect(my_car.physics.velocity) + up_vect).normal()) > 0.95 and impulse.len() / 900 * 40 < (my_car.boost + 10) and impulse.len() / 900 < time:
 			self.jump_timer += self.delta
 		else:
 			self.jump_timer = 0.0
@@ -672,7 +682,7 @@ def Aerial_Hit_Ball(self, packet: GameTickPacket, target: Vec3):
 		# self.controller_state.jump = my_car.has_wheel_contact and self.jump_timer > 0.2
 		
 		# ((car_pos - Make_Vect(packet.game_ball.physics.location)).len() < 300 and not my_car.has_wheel_contact)
-		if self.jump_timer > 0.1: # impulse_local.flatten().len() < max(75, time * 400)
+		if self.jump_timer > 0.15: # impulse_local.flatten().len() < max(75, time * 400)
 			Enter_Aerial(self, packet, time, aim)
 		
 
@@ -692,16 +702,19 @@ def Approximate_Time_To_Ball(prediction, car_index, packet, resolution, accelera
 	ball_pos = Make_Vect(prediction.slices[0].physics.location)
 	car_to_ball = ball_pos - car_pos
 	
-	while refine < resolution:
+	for i in range(0, len(prediction.slices) - 1, resolution):
 		slice = clamp(math.ceil(time_to_reach_ball * 60), 0, len(prediction.slices) - 5)
 		
 		ball_pos = Make_Vect(prediction.slices[slice].physics.location)
 		
 		car_to_ball = ball_pos - car_pos
 		
-		time_to_reach_ball = car_to_ball.len() / arieal_speed
+		time_to_reach_ball = (car_to_ball.len() - 100) / arieal_speed
 		
-		refine = refine + 1
+		if time_to_reach_ball < prediction.slices[slice].game_seconds:
+			return time_to_reach_ball
+		
+		# refine = refine + 1
 	
 	# while ball_pos.z > 250 and slice < len(prediction.slices) - 5:
 		# slice += 1
@@ -802,10 +815,12 @@ class Plan:
 				# break
 		
 	
-	def eval(self, agent, packet: GameTickPacket, dir):
+	def eval(self, agent, packet: GameTickPacket, own_goal):
 		
 		# print("Evaluation", packet.game_info.seconds_elapsed)
 		# print("Frame 1", agent.get_ball_prediction_struct().slices[0].game_seconds)
+		
+		own_goal = Make_Vect(own_goal)
 		
 		team = self.get_team_cars(packet)
 		
@@ -815,9 +830,14 @@ class Plan:
 		closest_team_mate = -1
 		car_behind_ball = False
 		for index in team:
-			d = Approximate_Time_To_Ball(prediction, index, packet, 10, 0, not packet.game_info.is_kickoff_pause)
+			d = Approximate_Time_To_Ball(prediction, index, packet, 5, 0, not packet.game_info.is_kickoff_pause)
 			
-			if dot(dir, Make_Vect(Get_Ball_At_T(packet, prediction, d).location) - Make_Vect(packet.game_cars[index].physics.location)) < 0.0:
+			car_pos = Make_Vect(packet.game_cars[index].physics.location)
+			
+			if index == self.attacking_car:
+				d *= 3
+			
+			if dot(car_pos - own_goal, Make_Vect(Get_Ball_At_T(packet, prediction, d).location) - car_pos) < 0.0:
 				d *= 5
 			else:
 				car_behind_ball = True
@@ -829,19 +849,23 @@ class Plan:
 				dist = d
 				closest_team_mate = index
 		
-		time_to_ball = Approximate_Time_To_Ball(agent.get_ball_prediction_struct(), agent.index, packet, 10, 0, not packet.game_info.is_kickoff_pause)
+		time_to_ball = Approximate_Time_To_Ball(agent.get_ball_prediction_struct(), agent.index, packet, 5, 0, not packet.game_info.is_kickoff_pause)
 		
-		is_behind_ball = dot(dir, Make_Vect(Get_Ball_At_T(packet, prediction, time_to_ball).location) - Make_Vect(packet.game_cars[agent.index].physics.location)) > 0.0
+		car_pos = Make_Vect(packet.game_cars[agent.index].physics.location)
+		is_behind_ball = dot(car_pos - own_goal, Make_Vect(Get_Ball_At_T(packet, prediction, time_to_ball).location) - car_pos) > 0.0
 		
 		if not is_behind_ball:
-			time_to_ball *= 10.0
+			time_to_ball *= 5.0
 		
-		if time_to_ball <= dist and (packet.game_cars[agent.index].has_wheel_contact) and (is_behind_ball or not car_behind_ball):
+		if not packet.game_cars[agent.index].has_wheel_contact:
+			time_to_ball *= 5.0
+		
+		if time_to_ball <= dist and (is_behind_ball or not car_behind_ball):
 			self.attacking_car = agent.index
 			self.state = State.ATTACK
 		else:
 			self.attacking_car = closest_team_mate
-			if packet.game_info.is_kickoff_pause and not agent.dropshot:
+			if packet.game_info.is_kickoff_pause:
 				self.state = State.GRABBOOST
 			else:
 				self.state = State.HOLD
@@ -874,12 +898,12 @@ class Plan:
 		
 		if self.state == State.SPAWN or has_hit_ball or dot(my_goal.direction, self.attack_car_to_ball) < 0.0 or ((dot(self.attack_car_vel, self.attack_car_to_ball) < 0.0 or self.attack_car_vel.len() < 200) and self.attack_car_to_ball.len() > 250) or packet.game_cars[self.attacking_car].is_demolished:
 			if self.state != State.GRABBOOST or packet.game_cars[agent.index].boost > 20:
-				self.eval(agent, packet, my_goal.direction)
+				self.eval(agent, packet, my_goal.location)
 		
 		# Dropshot
 		if agent.dropshot:
 			
-			dir_y = aign(my_goal.location.y)
+			dir_y = sign(my_goal.location.y)
 			
 			self.def_pos_1 = Vec3(sign(packet.game_ball.physics.location.x) * -1000, packet.game_ball.physics.location.y + dir_y * 1000, 0.0)
 			self.def_pos_2 = Make_Vect(packet.game_ball.physics.location) + Vec3(0, dir_y * 2000, 0) * 3500
@@ -892,8 +916,12 @@ class Plan:
 		# 3v3
 		else:
 			
+			ball = Get_Ball_At_T(packet, agent.get_ball_prediction_struct(), 3)
+			a = ball.location.y - my_goal.location.y
+			b = ball.location.y - opponent_goal.location.y
+			
 			# Defensive positioning
-			if abs(packet.game_ball.physics.location.y - my_goal.location.y) < 4000:
+			if abs(a) < 3000 or (abs(b) > 4000 and (ball.velocity.y + sign(my_goal.direction.y) * 1000) * sign(my_goal.direction.y) < 0.0):
 				self.def_pos_2 = Vec3(sign(packet.game_ball.physics.location.x) * -3500, my_goal.location.y + my_goal.direction.y * 500, 0.0)
 				self.def_pos_1 = Make_Vect(my_goal.location).flatten() - Vec3(sign(packet.game_ball.physics.location.x) * 500, 0, 0)
 				self.aim_pos = Vec3(sign(packet.game_ball.physics.location.x) * 3600, packet.game_ball.physics.location.y + my_goal.direction.y * 1000, 500.0)
@@ -901,7 +929,9 @@ class Plan:
 			# Offensive positioning
 			else:
 				self.def_pos_1 = Vec3(sign(packet.game_ball.physics.location.x) * -1000, packet.game_ball.physics.location.y + opponent_goal.direction.y * 1000, 0.0)
-				self.def_pos_2 = Make_Vect(packet.game_ball.physics.location) + Make_Vect(opponent_goal.direction) * 3500
+				b_p = Make_Vect(packet.game_ball.physics.location)
+				b_p.x *= 0.5
+				self.def_pos_2 = b_p + Make_Vect(opponent_goal.direction) * 4000
 				self.aim_pos = Make_Vect(opponent_goal.location) + Vec3(0, 0, -400)
 				self.aggro = True
 		
