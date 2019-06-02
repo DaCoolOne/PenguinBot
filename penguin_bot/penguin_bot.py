@@ -1241,7 +1241,7 @@ class Plan:
 			
 			# Defensive positioning
 			if abs(a) < 3000 or (abs(b) > 4000 and (ball.velocity.y + sign(my_goal.direction.y) * 1000) * sign(my_goal.direction.y) < 0.0):
-				self.def_pos_2 = Vec3(sign(packet.game_ball.physics.location.x) * -3000, my_goal.location.y + my_goal.direction.y * 1000, 0.0)
+				self.def_pos_2 = Vec3(sign(packet.game_ball.physics.location.x) * -3300, my_goal.location.y + my_goal.direction.y * 1000, 0.0)
 				self.def_pos_1 = Make_Vect(my_goal.location).flatten() - Vec3(sign(packet.game_ball.physics.location.x) * 200, 0, 0) - Make_Vect(my_goal.direction) * 300
 				self.aim_pos = Vec3(sign(packet.game_ball.physics.location.x) * 3600, packet.game_ball.physics.location.y + my_goal.direction.y * 1000, 500.0)
 				self.aggro = False
