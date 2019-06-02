@@ -198,7 +198,10 @@ def Drive_To(self, packet: GameTickPacket, position, boost = False, no_overshoot
 	position = Make_Vect(position)
 	
 	if not self.dropshot:
-		position = Vec3(constrain(position.x, -4100, 4100), constrain(position.y, -5100, 5100), position.z)
+		if abs(position.x) < 1000:
+			position = Vec3(constrain(position.x, -4100, 4100), constrain(position.y, -5400, 5400), position.z)
+		else:
+			position = Vec3(constrain(position.x, -4100, 4100), constrain(position.y, -5100, 5100), position.z)
 	
 	if abs(position.x) < 3500 and abs(position.y) < 4500 and not self.dropshot:
 		position.z = 0
@@ -1062,12 +1065,13 @@ class Plan:
 		self.was_kickoff = False
 		self.was_kickoff_2 = False
 		self.kickoff = False
+		self.eval_on_time = False
 		
 	
 	def get_team_cars(self, packet):
 		team_cars = []
 		
-		team = packet.game_cars[self.agent.index].team
+		team = self.agent.team
 		
 		for i in range(packet.num_cars):
 			car_to_ball = Make_Vect(packet.game_ball.physics.location) - Make_Vect(packet.game_cars[i].physics.location)
@@ -1126,26 +1130,7 @@ class Plan:
 		if not packet.game_cars[agent.index].has_wheel_contact and not self.kickoff:
 			time_to_ball *= 5.0
 		
-		if self.kickoff and self.eval_index == closest_team_mate:
-			if len(team) < 2:
-				self.attacking_car = agent.index
-				self.state = State.ATTACK
-				agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
-			elif scores[not closest_team_mate_2] > time_to_ball:
-				self.attacking_car = agent.index
-				self.state = State.ATTACK
-				agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
-			else:
-				self.attacking_car = team[not closest_team_mate_2]
-				self.state = State.GRABBOOST
-				# agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_TakeTheShot)
-		elif time_to_ball <= dist and is_behind_ball:
-			self.attacking_car = agent.index
-			self.state = State.ATTACK
-			agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
-			
-		# Don't send quick chat bc we don't want to push other bots off the ball
-		elif time_to_ball <= dist and not car_behind_ball:
+		if time_to_ball <= dist:
 			self.attacking_car = agent.index
 			self.state = State.ATTACK
 		else:
@@ -1163,6 +1148,7 @@ class Plan:
 		
 	
 	def recalculate(self, agent):
+		self.eval_on_time = False
 		if self.attacking_car == agent.index:
 			self.state = State.ATTACK
 			agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
@@ -1203,8 +1189,14 @@ class Plan:
 		if self.kickoff and not self.was_kickoff:
 			self.pause_eval = 0.1
 			self.attacking_car = -1
+			self.eval_on_time = True
 		
-		if self.pause_eval <= 0.0 and not self.kickoff:
+		if self.eval_on_time and self.pause_eval <= 0.0:
+			self.eval(agent, packet, my_goal.location)
+			self.pause_eval = 0.1
+			has_evaled = True
+		
+		if not has_evaled and self.pause_eval <= 0.0 and not self.kickoff:
 			if self.state == State.SPAWN or has_hit_ball or dot(my_goal.direction, self.attack_car_to_ball) < 0.0 or ((dot(self.attack_car_vel, self.attack_car_to_ball) < 0.0 or (self.attack_car_vel.len() < 200 and not self.kickoff)) and self.attack_car_to_ball.len() > 250) or packet.game_cars[self.attacking_car].is_demolished:
 				if self.state != State.GRABBOOST or packet.game_cars[agent.index].boost > 40:
 					self.eval(agent, packet, my_goal.location)
@@ -1214,6 +1206,7 @@ class Plan:
 		
 		if not has_evaled and self.force_eval:
 			self.eval(agent, packet, my_goal.location)
+			self.pause_eval = 0.1
 			has_evaled = True
 		
 		self.force_eval = False
@@ -1239,9 +1232,9 @@ class Plan:
 			b = ball.location.y - opponent_goal.location.y
 			
 			# Defensive positioning
-			if abs(a) < 3000 or (abs(b) > 4000 and (ball.velocity.y + sign(my_goal.direction.y) * 1000) * sign(my_goal.direction.y) < 0.0):
+			if abs(a) < 4000 or (abs(b) > 4000 and (ball.velocity.y + sign(my_goal.direction.y) * 1000) * sign(my_goal.direction.y) < 0.0):
 				self.def_pos_2 = Vec3(sign(packet.game_ball.physics.location.x) * -3300, my_goal.location.y + my_goal.direction.y * 1000, 0.0)
-				self.def_pos_1 = Make_Vect(my_goal.location).flatten() - Vec3(sign(packet.game_ball.physics.location.x) * 200, 0, 0) - Make_Vect(my_goal.direction) * 300
+				self.def_pos_1 = Make_Vect(my_goal.location).flatten() - Vec3(sign(packet.game_ball.physics.location.x) * 200, 0, 0) - Make_Vect(my_goal.direction) * 200
 				self.aim_pos = Vec3(sign(packet.game_ball.physics.location.x) * 3600, packet.game_ball.physics.location.y + my_goal.direction.y * 1000, 500.0)
 				self.aggro = False
 			# Offensive positioning
