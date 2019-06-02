@@ -1046,6 +1046,7 @@ class Plan:
 		self.attacking_car = -1
 		
 		self.was_kickoff = False
+		self.was_kickoff_2 = False
 		self.kickoff = False
 		
 	
@@ -1074,7 +1075,9 @@ class Plan:
 		
 		dist = 1000
 		closest_team_mate = -1
+		closest_team_mate_2 = -1
 		car_behind_ball = False
+		scores = []
 		for index in team:
 			d = Approximate_Time_To_Ball(prediction, index, packet, 5, 0, not self.kickoff)
 			
@@ -1094,6 +1097,9 @@ class Plan:
 			if dist > d:
 				dist = d
 				closest_team_mate = index
+				closest_team_mate_2 = len(scores)
+			
+			scores.append(d)
 		
 		time_to_ball = Approximate_Time_To_Ball(agent.get_ball_prediction_struct(), agent.index, packet, 5, 0, not self.kickoff)
 		
@@ -1106,10 +1112,19 @@ class Plan:
 		if not packet.game_cars[agent.index].has_wheel_contact and not self.kickoff:
 			time_to_ball *= 5.0
 		
-		if self.kickoff and self.eval_index != -1:
-			self.attacking_car = self.eval_index
-			self.state = State.GRABBOOST
-			agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_NeedBoost)
+		if self.kickoff and self.eval_index == closest_team_mate:
+			if len(team) < 2:
+				self.attacking_car = agent.index
+				self.state = State.ATTACK
+				agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
+			elif scores[not closest_team_mate_2] > time_to_ball:
+				self.attacking_car = agent.index
+				self.state = State.ATTACK
+				agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
+			else:
+				self.attacking_car = team[not closest_team_mate_2]
+				self.state = State.GRABBOOST
+				# agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_TakeTheShot)
 		elif time_to_ball <= dist and is_behind_ball:
 			self.attacking_car = agent.index
 			self.state = State.ATTACK
@@ -1172,7 +1187,7 @@ class Plan:
 		has_evaled = False
 		
 		if self.pause_eval <= 0.0 and not self.kickoff:
-			if self.state == State.SPAWN or has_hit_ball or dot(my_goal.direction, self.attack_car_to_ball) < 0.0 or ((dot(self.attack_car_vel, self.attack_car_to_ball) < 0.0 or self.attack_car_vel.len() < 200) and self.attack_car_to_ball.len() > 250) or packet.game_cars[self.attacking_car].is_demolished:
+			if self.state == State.SPAWN or has_hit_ball or dot(my_goal.direction, self.attack_car_to_ball) < 0.0 or ((dot(self.attack_car_vel, self.attack_car_to_ball) < 0.0 or (self.attack_car_vel.len() < 200 and not self.kickoff)) and self.attack_car_to_ball.len() > 250) or packet.game_cars[self.attacking_car].is_demolished:
 				if self.state != State.GRABBOOST or packet.game_cars[agent.index].boost > 40:
 					self.eval(agent, packet, my_goal.location)
 					# Do not evaluate for another 0.1 seconds
@@ -1212,7 +1227,7 @@ class Plan:
 			
 			# Defensive positioning
 			if abs(a) < 3000 or (abs(b) > 4000 and (ball.velocity.y + sign(my_goal.direction.y) * 1000) * sign(my_goal.direction.y) < 0.0):
-				self.def_pos_2 = Vec3(sign(packet.game_ball.physics.location.x) * -3500, my_goal.location.y + my_goal.direction.y * 500, 0.0)
+				self.def_pos_2 = Vec3(sign(packet.game_ball.physics.location.x) * -3000, my_goal.location.y + my_goal.direction.y * 500, 0.0)
 				self.def_pos_1 = Make_Vect(my_goal.location).flatten() - Vec3(sign(packet.game_ball.physics.location.x) * 200, 0, 0) - Make_Vect(my_goal.direction) * 300
 				self.aim_pos = Vec3(sign(packet.game_ball.physics.location.x) * 3600, packet.game_ball.physics.location.y + my_goal.direction.y * 1000, 500.0)
 				self.aggro = False
@@ -1256,6 +1271,7 @@ class Plan:
 			
 		
 		self.pause_eval = self.pause_eval - agent.delta
+		self.was_kickoff = self.kickoff
 		
 		# render_star(agent, self.def_pos_1, agent.renderer.blue())
 		# render_star(agent, self.def_pos_2, agent.renderer.blue())
@@ -1305,6 +1321,8 @@ class PenguinBot(BaseAgent):
 		
 		self.pulse_handbrake = False
 		
+		self.has_sent_end_game_quick_chat = False
+		
 	
 	def handle_quick_chat(self, index, team, quick_chat):
 		if team == self.team and index != self.index: # Ignore quickchats sent by other team or ourselves
@@ -1316,9 +1334,11 @@ class PenguinBot(BaseAgent):
 			elif quick_chat == QuickChats.Information_GoForIt or quick_chat == QuickChats.Information_TakeTheShot:
 				self.plan.force_eval = True
 				self.plan.eval_index = index
+				self.plan.pause_eval = 0.1
 			elif quick_chat == QuickChats.Information_NeedBoost and index == self.plan.attacking_car:
 				self.plan.force_eval = True
 				self.plan.eval_index = index
+				self.plan.pause_eval = 0.1
 	
 	def brain(self, packet: GameTickPacket):
 		
@@ -1348,27 +1368,44 @@ class PenguinBot(BaseAgent):
 	
 	def get_output(self, packet: GameTickPacket):
 		
-		self.boost = packet.game_cars[self.index].boost
-		
-		b = packet.game_ball.physics.location
-		
-		self.kickoff = (b.x == 0 and b.y == 0)
-		
-		self.dropshot = packet.num_tiles > 0
-		
-		self.renderer.begin_rendering()
-		
-		time = packet.game_info.seconds_elapsed
-		self.delta = time - self.prev_time
-		self.prev_time = time
-		
-		if self.manuever_lock <= 0.0:
-			self.brain(packet)
+		if packet.game_info.is_match_ended:
+			
+			if not self.has_sent_end_game_quick_chat:
+				self.has_sent_end_game_quick_chat = True
+				self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.PostGame_Gg)
+			
+			# In lieu of a celebration :P
+			self.controller_state.pitch = 1.0
+			self.controller_state.yaw = 0.0
+			self.controller_state.roll = 0.0
+			self.controller_state.jump = True
+			self.controller_state.throttle = 0.0
+			self.controller_state.boost = False
+			self.controller_state.steer = 0.0
+			self.controller_state.handbrake = False
+			
 		else:
-			self.manuever_lock = self.manuever_lock - self.delta
-			self.manuever(self, packet, self.manuever_lock)
-		
-		self.renderer.end_rendering()
+			self.boost = packet.game_cars[self.index].boost
+			
+			b = packet.game_ball.physics.location
+			
+			self.kickoff = (b.x == 0 and b.y == 0)
+			
+			self.dropshot = packet.num_tiles > 0
+			
+			self.renderer.begin_rendering()
+			
+			time = packet.game_info.seconds_elapsed
+			self.delta = time - self.prev_time
+			self.prev_time = time
+			
+			if self.manuever_lock <= 0.0:
+				self.brain(packet)
+			else:
+				self.manuever_lock = self.manuever_lock - self.delta
+				self.manuever(self, packet, self.manuever_lock)
+			
+			self.renderer.end_rendering()
 		
 		return self.controller_state
 	
