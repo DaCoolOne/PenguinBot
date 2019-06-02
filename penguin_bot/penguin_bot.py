@@ -370,13 +370,13 @@ def Drive_Through_At_T(self, packet, position, time):
 		
 		current_velocity = car_vel.len() * dot(car_to_pos.normal(), car_vel.normal())
 		
-		self.controller_state.throttle = constrain((target_velocity - current_velocity) * time * abs(current_velocity) * 0.001 + 0.05, -1, 1)
+		self.controller_state.throttle = constrain((target_velocity - current_velocity) * time * abs(current_velocity) * 0.0001, -1, 1)
 		
 		car_face = get_car_facing_vector(my_car)
 		
-		self.controller_state.handbrake = steer_correction_radians < car_ang_vel.z * 2 and dot(car_to_pos.normal(), car_face) < 0.6
+		self.controller_state.handbrake = abs(steer_correction_radians) > car_ang_vel.z * 2 * sign(steer_correction_radians) and dot(car_to_pos.normal(), car_face) < 0.6
 		
-		self.controller_state.boost = (target_velocity - current_velocity) * time * abs(current_velocity) * 0.001 > 300 and not self.controller_state.handbrake
+		self.controller_state.boost = (target_velocity - current_velocity) * time * abs(current_velocity) * 0.001 > 400 and not self.controller_state.handbrake
 		
 		self.controller_state.yaw = 0
 		self.controller_state.pitch = 0
