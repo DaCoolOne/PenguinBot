@@ -186,8 +186,9 @@ def Face_Dir(self, packet: GameTickPacket, dir):
 	Align_Car_To(self, packet, dir, Vec3(0, 1, 0))
 	
 	self.controller_state.boost = False
-	self.controller_state.throttle = 0.0
+	self.controller_state.throttle = random.random() - 0.5
 	self.controller_state.handbrake = self.pulse_handbrake
+	self.controller_state.steer = self.controller_state.yaw * sign(self.controller_state.throttle)
 	
 	self.pulse_handbrake = not self.pulse_handbrake
 	
@@ -1343,7 +1344,7 @@ class PenguinBot(BaseAgent):
 			if (car_pos - self.plan.def_pos).len() > 500:
 				Collect_Boost(self, packet, self.plan.def_pos, False, True, True, False)
 			else:
-				Face_Dir(self, packet, car_pos - ball_pos)
+				Face_Dir(self, packet, ball_pos - car_pos)
 	
 	def get_output(self, packet: GameTickPacket):
 		
