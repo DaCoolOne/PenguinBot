@@ -216,7 +216,7 @@ def Drive_To(self, packet: GameTickPacket, position, boost = False, no_overshoot
 		car_to_pos_vel_2 = car_to_pos + Make_Vect(my_car.physics.velocity)
 		
 		if no_overshoot:
-			car_to_pos_vel_2 = car_to_pos - Make_Vect(my_car.physics.velocity)
+			car_to_pos_vel_2 = car_to_pos - Make_Vect(my_car.physics.velocity) * 0.3
 		
 		steer_correction_radians = correction(my_car, car_to_pos)
 		
@@ -910,20 +910,20 @@ def Aerial_Hit_Ball(self, packet: GameTickPacket, target: Vec3):
 			
 			a = correction(my_car, ball_pos - aim)
 			
-			# Drive_To(self, packet, ball_pos - aim)
+			Drive_To(self, packet, ball_pos - aim, True)
 			
-			if abs(a) < 0.1: # or impulse_local.flatten().len() < 100:
-				self.controller_state.throttle = constrain(impulse_local.x * 3, -1, 1)
-				self.controller_state.steer = constrain(a, -1, 1)
+			# if abs(a) < 0.1: # or impulse_local.flatten().len() < 100:
+				# self.controller_state.throttle = constrain(impulse_local.x * 3, -1, 1)
+				# self.controller_state.steer = constrain(a, -1, 1)
 			
-			if dot(my_car.physics.velocity, get_car_facing_vector(my_car)) < 0.0:
-				self.controller_state.steer = constrain(-self.controller_state.steer, -1, 1)
+			# if dot(my_car.physics.velocity, get_car_facing_vector(my_car)) < 0.0:
+				# self.controller_state.steer = constrain(-self.controller_state.steer, -1, 1)
 			
-			if abs(dot(Vec3(1, 0, 0), impulse_local.flatten().normal())) < 0.2 or impulse_local.flatten().len() < impulse_local.z * 0.5:
-				self.controller_state.handbrake = True
-				self.controller_state.throttle = 1.0
+			# if abs(dot(Vec3(1, 0, 0), impulse_local.flatten().normal())) < 0.2 or impulse_local.flatten().len() < impulse_local.z * 0.5:
+				# self.controller_state.handbrake = True
+				# self.controller_state.throttle = 1.0
 			
-			self.controller_state.boost = self.controller_state.throttle > 0.99 and abs(a) < 0.2 and impulse_local.x > 3
+			# self.controller_state.boost = self.controller_state.throttle > 0.99 and abs(a) < 0.2 and impulse_local.x > 3
 			
 			self.renderer.draw_line_3d(my_car.physics.location, (car_pos + impulse_raw).UI_Vec3(), self.renderer.red())
 			self.renderer.draw_line_3d(my_car.physics.location, (car_pos + Make_Vect(my_car.physics.velocity) + up_vect).UI_Vec3(), self.renderer.yellow())
@@ -1200,6 +1200,10 @@ class Plan:
 		
 		has_evaled = False
 		
+		if self.kickoff and not self.was_kickoff:
+			self.pause_eval = 0.1
+			self.attacking_car = -1
+		
 		if self.pause_eval <= 0.0 and not self.kickoff:
 			if self.state == State.SPAWN or has_hit_ball or dot(my_goal.direction, self.attack_car_to_ball) < 0.0 or ((dot(self.attack_car_vel, self.attack_car_to_ball) < 0.0 or (self.attack_car_vel.len() < 200 and not self.kickoff)) and self.attack_car_to_ball.len() > 250) or packet.game_cars[self.attacking_car].is_demolished:
 				if self.state != State.GRABBOOST or packet.game_cars[agent.index].boost > 40:
@@ -1211,11 +1215,6 @@ class Plan:
 		if not has_evaled and self.force_eval:
 			self.eval(agent, packet, my_goal.location)
 			has_evaled = True
-		
-		if not has_evaled and not self.was_kickoff and self.kickoff:
-			has_evaled = True
-			self.attacking_car = -1
-			self.eval(agent, packet, my_goal.location)
 		
 		self.force_eval = False
 		
