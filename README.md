@@ -1,5 +1,5 @@
 # PenguinBot
-Open-Source Python rocket league bot made to work using the RLBot framework. Currently only supports dropshot, more modes coming soon.
+Open-Source Python rocket league bot made to work using the RLBot framework. Currently only supports 3v3 and dropshot (to an extent).
 
 In order to run this bot, download or clone the repository to your computer.
 
